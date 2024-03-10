@@ -1,9 +1,13 @@
 const express = require("express");
+const { run } = require('./connect')
+const { createProject } = require('./database/project')
+const cors = require('cors');
 
 const app = express();
 app.use(express.json());
+app.use(cors());
 
-app.post("/compute-score", (req, res) => {
+app.post("/compute-score", async (req, res) => {
 
   /* 
     poteniels: {
@@ -19,10 +23,6 @@ app.post("/compute-score", (req, res) => {
       q1: 8, q2: 0...q7
     }
   */
-
-
-  // stock in DB 
-
 
   // compute score
   const poteniel = req.body.poteniel
@@ -43,6 +43,13 @@ app.post("/compute-score", (req, res) => {
   res.send(`pourcentage: ${finalCompute}`)
 });
 
+app.post("/add-project", async (req, res) => {
+  const project = req.body
+  const client = await run()
+  await createProject(client, project)
+
+  res.send(project)
+})
 
 app.listen(3000, () => {
   console.log("I am listening in port 3000");
