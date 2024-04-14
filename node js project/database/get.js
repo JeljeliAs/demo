@@ -16,5 +16,23 @@ const getDocumentById = async (client, collectionName, id) => {
     return await myColl.findOne({ _id: documentId });
 }
 
+const getDocumentByField = async (client, collectionName, fieldName, fieldValue) => {
+    const myDB = client.db("auditapp");
+    const myColl = myDB.collection(collectionName);
+    
+    const query = { [fieldName]: fieldValue };
+    return await myColl.findOne(query);
+}
+
+const getDocumentsByField = async (client, collectionName, fieldName, fieldValue) => {
+    const myDB = client.db("auditapp");
+    const myColl = myDB.collection(collectionName);
+    const query = { [fieldName]: fieldValue };
+
+    return await myColl.find(query).toArray();
+}
+
 exports.getCollection = getCollection
 exports.getDocumentById = getDocumentById
+exports.getDocumentByField = getDocumentByField
+exports.getDocumentsByField = getDocumentsByField

@@ -1,8 +1,10 @@
 const express = require("express");
 const { run } = require('./connect')
 const { createCollection } = require('./database/insert')
-const { getCollection, getDocumentById } = require('./database/get')
+const { getCollection, getDocumentById, getDocumentByField, getDocumentsByField } = require('./database/get')
+const { deleteDocumentById, deleteDocumentsByField } = require('./database/delete')
 const cors = require('cors');
+const { ObjectId } = require('mongodb');
 
 const app = express();
 app.use(express.json());
@@ -28,18 +30,37 @@ app.post("/compute-score", async (req, res) => {
 
   // compute score
   const poteniel = req.body.poteniel
+  const type = req.body.type
 
   let totalScore = 0
   let counter = 0
+  let scoreForP1 = {
+    green: 0,
+    yellow: 0,
+    red: 0
+  }
 
   for (let [question, score] of Object.entries(poteniel)) {
-    if (score !== 'N/B') {
+    if (score === 'N/B') continue
+
+    if (type === 'P1') {
+      scoreForP1[score]++ 
+    } else {
       totalScore += score
       counter++
     }
   }
 
-  const finalCompute = (totalScore / (counter * 10)) * 100
+  let finalCompute = 0
+
+  if (type === 'P1') {
+    const maxRes = Math.max(scoreForP1.green, scoreForP1.red, scoreForP1.yellow)
+    if (scoreForP1.green === maxRes) return res.send('green')
+    if (scoreForP1.yellow === maxRes) return res.send('yellow')
+    if (scoreForP1.red === maxRes) return res.send('red')
+  } else {
+    finalCompute = (totalScore / (counter * 10)) * 100
+  }
 
   // return response
   res.send(`pourcentage: ${finalCompute}`)
@@ -52,23 +73,175 @@ app.get("/audit/all", async (req, res) => {
   // question, type
   const projects = await getCollection(client, "Project")
 
-  projects.forEach(project => {
-    const name = project.nom
-    const projectDate = project.date
-
+  for (const project of projects) {
     const auditId = project.auditId
-    const audit = getDocumentById(client, "Audit", auditId)
-    const auditDate = audit.date
-    const auditobject = audit.objectAudit
-    const auditCause = audit.cause
+    const audit = await getDocumentById(client, "Audit", auditId)
 
-    
+    const auditorAudit = await getDocumentByField(client, 'AuditorAudit','auditId', auditId)
+    const auditorId = auditorAudit.auditorId
+    const auditor = await getDocumentById(client, "Auditor", auditorId)
 
     const organisationToAuditId = project.organisationToAuditId
+    const organisationToAudit = await getDocumentById(client, "OrganisationToAudit", organisationToAuditId)
+  
+    const addressId = organisationToAudit.addressId
+    const address = await getDocumentById(client, "Address", addressId)
 
-  });
+    const projectId = project._id
+    const questions = await getDocumentsByField(client, 'Question', "projectId", projectId)
 
-  res.send(project)
+    let questionsDetailed = []
+    for (const question of questions) {
+      const questionDataId = question.questionDataId
+      const questionData = await getDocumentById(client, "QuestionData", questionDataId)
+      questionsDetailed.push({
+        response: question.response,
+        commentaire1: question.commentaire1,
+        commentaire2: question.commentaire2,
+        fileUrl: question.fileUrl,
+        questionContent: questionData.question,
+        type: questionData.type,
+      })
+
+    }
+
+    response.push({
+      project: {
+        name: project.nom,
+        date: project.date,
+      },
+      audit: {
+        date: audit.date,
+        objectAudit: audit.objectAudit,
+        cause: audit.cause,
+      },
+      auditor: {
+        type: auditor.type,
+        name: auditor.name,
+        company: auditor.company,
+        departement: auditor.departement,
+        idCertif: auditor.idCertif,
+        mail: auditor.mail,
+      },
+      organisationToAudit: {
+        name: organisationToAudit.name,
+        status: organisationToAudit.status,
+        email: organisationToAudit.email,
+        idLivraison: organisationToAudit.idLivraison,
+        equipToAudit: organisationToAudit.equipToAudit,
+        ceo: organisationToAudit.ceo,
+        phone: organisationToAudit.phone,
+        qualityManager: organisationToAudit.qualityManager,
+        ChiefExecutorExpl: organisationToAudit.ChiefExecutorExpl,
+        signedBy: organisationToAudit.signedBy,
+        address: {
+          city: address.city,
+          cp: address.cp,
+          street1: address.street1,
+          street2: address.street2,
+          country: address.country,
+        }
+      },
+      questions: questionsDetailed
+    });
+  }
+
+  res.json(response)
+})
+
+app.get("/audit/:projectId", async (req, res) => {
+  const client = await run()
+
+  const projectId = req.params.projectId
+  const project = await getDocumentById(client, "Project", projectId)
+
+  const auditId = project.auditId
+  const audit = await getDocumentById(client, "Audit", auditId)
+
+  const auditorAudit = await getDocumentByField(client, 'AuditorAudit','auditId', auditId)
+  const auditorId = auditorAudit.auditorId
+  const auditor = await getDocumentById(client, "Auditor", auditorId)
+
+  const organisationToAuditId = project.organisationToAuditId
+  const organisationToAudit = await getDocumentById(client, "OrganisationToAudit", organisationToAuditId)
+
+  const addressId = organisationToAudit.addressId
+  const address = await getDocumentById(client, "Address", addressId)
+
+  const projectIdObject = new ObjectId(projectId);
+  const questions = await getDocumentsByField(client, 'Question', "projectId", projectIdObject)
+
+  let questionsDetailed = []
+  for (const question of questions) {
+    const questionDataId = question.questionDataId
+    const questionData = await getDocumentById(client, "QuestionData", questionDataId)
+    questionsDetailed.push({
+      response: question.response,
+      commentaire1: question.commentaire1,
+      commentaire2: question.commentaire2,
+      fileUrl: question.fileUrl,
+      questionContent: questionData.question,
+      type: questionData.type,
+    })
+  }
+
+  res.json(
+    {
+      project: {
+        name: project.nom,
+        date: project.date,
+      },
+      audit: {
+        date: audit.date,
+        objectAudit: audit.objectAudit,
+        cause: audit.cause,
+      },
+      auditor: {
+        type: auditor.type,
+        name: auditor.name,
+        company: auditor.company,
+        departement: auditor.departement,
+        idCertif: auditor.idCertif,
+        mail: auditor.mail,
+      },
+      organisationToAudit: {
+        name: organisationToAudit.name,
+        status: organisationToAudit.status,
+        email: organisationToAudit.email,
+        idLivraison: organisationToAudit.idLivraison,
+        equipToAudit: organisationToAudit.equipToAudit,
+        ceo: organisationToAudit.ceo,
+        phone: organisationToAudit.phone,
+        qualityManager: organisationToAudit.qualityManager,
+        ChiefExecutorExpl: organisationToAudit.ChiefExecutorExpl,
+        signedBy: organisationToAudit.signedBy,
+        address: {
+          city: address.city,
+          cp: address.cp,
+          street1: address.street1,
+          street2: address.street2,
+          country: address.country,
+        }
+      },
+      questions: questionsDetailed
+    }
+  )
+})
+
+app.delete("/audit/:projectId", async (req, res) => {
+  const client = await run()
+  const projectId = req.params.projectId
+  const project = await getDocumentById(client, "Project", projectId)
+  const projectIdObject = project._id
+
+  const auditId = project.auditId
+  await deleteDocumentById(client, "Project", project._id)
+  await deleteDocumentById(client, "Audit", auditId)
+
+  const auditorAudit = await getDocumentByField(client, 'AuditorAudit','auditId', auditId)
+  await deleteDocumentById(client, "AuditorAudit", auditorAudit._id)
+ await  deleteDocumentsByField(client, 'Question', "projectId", projectIdObject)
+ res.send("Successfully deleted an audit")
 })
 
 // project API
